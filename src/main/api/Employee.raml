@@ -1,0 +1,103 @@
+#%RAML 0.8
+title: Employee
+version: 1.0
+
+baseUri: http://server/api/
+/Employee:
+  displayName: Employee
+  get:
+    description: Get a list of all the Employee by Id
+    responses:
+      200:
+        body:
+          application/json:
+            example: |
+              [
+                {
+                  "Id": "1",
+                  "firstName": "Sandesh",
+                  "lastName": "java,Hibernate",
+                  "age": 20,
+                  "dept":"Cs"
+                },
+                {
+                  "Id": "2",
+                  "firstName": "Sandesh",
+                  "lastName": "java,Hibernate",
+                  "age": 20,
+                  "dept":"Cs"                },
+                {
+                  "Id": "3",
+                  "firstName": "Sandesh",
+                  "lastName": "java,Hibernate",
+                  "age": 20,
+                  "dept":"Cs"
+                }
+              ]
+  
+  /{Id}:
+    get:
+      description: Get a list of all the Employee by Id
+      responses:
+        200:
+          body:
+            application/json:
+              example: |
+                
+                {
+                  "Id": "1",
+                  "firstName": "Sandesh",
+                  "lastName": "java,Hibernate",
+                  "age": 20,
+                  "dept":"Cs"
+                }
+    delete:
+      responses:
+        200:
+          body:
+            application/json:
+              example: |
+                
+                {
+                  "message": "Data deleted successfully"
+                }
+
+    put:
+      body:
+        application/json:
+              example: |
+                {
+                  "firstName": "Sandesh",
+                  "lastName": "java,Hibernate",
+                  "age": 20,
+                  "dept":"Cs"
+                }
+      responses:
+        201:
+          body:
+            application/json:
+              example: |
+                
+                {
+                  "message": "Data updated successfully"
+                }              
+                        
+  post:
+      body:
+        application/json:
+              example: |
+                {
+                  "firstName": "Sandesh",
+                  "lastName": "java,Hibernate",
+                  "age": 20,
+                  "dept":"Cs"
+                }
+      responses:
+        201:
+          body:
+            application/json:
+              example: |
+                
+                {
+                  "message": "Data Added successfully"
+                }

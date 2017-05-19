@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/apikit" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/apikit http://www.mulesoft.org/schema/mule/apikit/current/mule-apikit.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.1.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+    <apikit:config name="Employee-config" raml="Employee.raml" consoleEnabled="false" doc:name="Router"/>
+    <vm:connector name="VM-Activity" queueTimeout="100000" validateConnections="true" doc:name="VM"/>
+    <vm:connector name="VM-Events" queueTimeout="100000" validateConnections="true" doc:name="VM"/>
+    <flow name="Employee-main">
+        <http:listener config-ref="Employee-httpListenerConfig" path="/api/*" doc:name="HTTP"/>
+        <set-property propertyName="clientDetail" value="#[message.inboundProperties]" doc:name="Property - Client Details"/>
+        <set-property propertyName="eventSource" value="EmployeeAPI" doc:name="Event Source"/>
+        <vm:outbound-endpoint exchange-pattern="one-way" path="qevents" connector-ref="VM-Events" doc:name="VM Events"/>
+        <apikit:router config-ref="Employee-config" doc:name="APIkit Router"/>
+        <exception-strategy ref="Employee-apiKitGlobalExceptionMapping" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="Employee-console">
+        <http:listener config-ref="Employee-httpListenerConfig" path="/console/*" doc:name="HTTP"/>
+        <apikit:console config-ref="Employee-config" doc:name="APIkit Console"/>
+    </flow>
+    <flow name="put:/Employee/{Id}:Employee-config">
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <enricher source="#[payload]" target="#[flowVars.oldValue]" doc:name="Message Enricher">
+            <flow-ref name="getEmployeeByIdFlow" doc:name="getEmployeeByIdFlow"/>
+        </enricher>
+        <set-property propertyName="oldValue" value="#[flowVars.oldValue]" doc:name="Old Value"/>
+        <set-session-variable variableName="eventOperation" value="U" doc:name="Event Operation"/>
+        <vm:outbound-endpoint exchange-pattern="one-way" path="qactivity" connector-ref="VM-Activity" doc:name="VM -Activity"/>
+        <flow-ref name="updateEmployeeFlow" doc:name="updateEmployeeFlow"/>
+		<vm:outbound-endpoint exchange-pattern="one-way" path="uactivity" connector-ref="VM-updateActivity" doc:name="VM -updateActivity"/>
+    </flow>
+    <flow name="delete:/Employee/{Id}:Employee-config">
+        <logger message="Delete" level="INFO" doc:name="Logger"/>
+        <flow-ref name="getEmployeeByIdFlow" doc:name="getEmployeeByIdFlow"/>
+        <logger level="INFO" doc:name="Logger" message="#[payload]"/>
+        <set-property propertyName="oldValue" value="#[payload]" doc:name="Old Value"/>
+        <set-session-variable variableName="eventOperation" value="D" doc:name="Event Operation"/>
+        <vm:outbound-endpoint exchange-pattern="one-way" path="qactivity" connector-ref="VM-Activity" doc:name="VM -Activity"/>
+        <flow-ref name="deleteEmployeeByIdFlow" doc:name="deleteEmployeeByIdFlow"/>
+		<vm:outbound-endpoint exchange-pattern="one-way" path="uactivity" connector-ref="VM-updateActivity" doc:name="VM -updateActivity"/>
+    </flow>
+    <flow name="get:/Employee:Employee-config">
+        <flow-ref name="getEmployeesFlow" doc:name="getEmployeesFlow"/>
+
+    </flow>
+    <flow name="get:/Employee/{Id}:Employee-config">
+        <logger message="getEmpById" level="INFO" doc:name="Logger"/>
+        <flow-ref name="getEmployeeByIdFlow" doc:name="getEmployeeByIdFlow"/>
+
+    </flow>
+    <flow name="post:/Employee:Employee-config">
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <set-property propertyName="oldValue" value="" doc:name="Old Value"/>
+        <set-session-variable variableName="eventOperation" value="C" doc:name="Event Operation"/>
+        <vm:outbound-endpoint exchange-pattern="one-way" path="qactivity" connector-ref="VM-Activity" doc:name="VM Activity"/>
+        <flow-ref name="addEmployeeFlow" doc:name="addEmployeeFlow"/>
+		<vm:outbound-endpoint exchange-pattern="one-way" path="uactivity" connector-ref="VM-updateActivity" doc:name="VM -updateActivity"/>
+    </flow>
+    <apikit:mapping-exception-strategy name="Employee-apiKitGlobalExceptionMapping">
+        <apikit:mapping statusCode="404">
+            <apikit:exception value="org.mule.module.apikit.exception.NotFoundException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Resource not found&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="405">
+            <apikit:exception value="org.mule.module.apikit.exception.MethodNotAllowedException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Method not allowed&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="415">
+            <apikit:exception value="org.mule.module.apikit.exception.UnsupportedMediaTypeException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Unsupported media type&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="406">
+            <apikit:exception value="org.mule.module.apikit.exception.NotAcceptableException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Not acceptable&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+        <apikit:mapping statusCode="400">
+            <apikit:exception value="org.mule.module.apikit.exception.BadRequestException" />
+            <set-property propertyName="Content-Type" value="application/json" doc:name="Property"/>
+            <set-payload value="{ &quot;message&quot;: &quot;Bad request&quot; }" doc:name="Set Payload"/>
+        </apikit:mapping>
+    </apikit:mapping-exception-strategy>
+</mule>

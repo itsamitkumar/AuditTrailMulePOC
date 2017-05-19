@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:json="http://www.mulesoft.org/schema/mule/json"
+	xmlns:scripting="http://www.mulesoft.org/schema/mule/scripting"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/scripting http://www.mulesoft.org/schema/mule/scripting/current/mule-scripting.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <vm:connector name="VM-updateActivity" validateConnections="true" doc:name="VM"/>
+   
+    <flow name="ActivityFlow">
+        <vm:inbound-endpoint exchange-pattern="one-way" path="qactivity" connector-ref="VM-Activity" doc:name="VM-Activity"/>
+        <byte-array-to-string-transformer doc:name="Byte Array to String"/>
+        <choice doc:name="Choice">
+            <when expression="#[sessionVars.eventOperation == 'U']">
+                <logger message="PUT #[message.inboundProperties.oldValue]" level="INFO" doc:name="Logger"/>
+                <enricher source="#[payload]" target="#[flowVars.attribute]" doc:name="Message Enricher">
+                    <flow-ref name="ActivityTrackAttributeSub_Flow" doc:name="ActivityTrackAttributeSub_Flow"/>
+                </enricher>
+            </when>
+            <when expression="#[sessionVars.eventOperation == 'C' || sessionVars.eventOperation == 'D' ]">
+                <logger message="POST DELETE" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="attribute" value="11111" doc:name="attribute"/>
+            </when>
+            <otherwise>
+                <logger message="GET" level="INFO" doc:name="Logger"/>
+                <set-variable variableName="attribute" value="00000" doc:name="attribute"/>
+            </otherwise>
+        </choice>
+        <logger message="TESTEE: #[flowVars.attribute]" level="INFO" doc:name="Logger"/>
+        <db:insert config-ref="MySQL_Configuration" doc:name="Database">
+            <db:parameterized-query><![CDATA[insert into activity 
+	(MULE_MESSAGE_ID, 
+	ACTIVITY_TYPE, 
+	OLD_VALUE, 
+	NEW_VALUE, 
+	ACTIVITY_COMPLETED,
+	attributeValue)
+	values
+	(#[message.id.toString()], 
+	#[sessionVars.eventOperation], 
+	#[message.inboundProperties.oldValue.toString()], 
+		#[payload.toString()], 
+		 false,
+		#[flowVars.attribute]);]]></db:parameterized-query>
+        </db:insert>
+    </flow>
+    <sub-flow name="ActivetyOldValueMapSub_Flow">
+        <set-payload value="#[(message.inboundProperties.oldValue.toString().replace(&quot;[&quot;,&quot;&quot;)).toString().replace(&quot;[&quot;,&quot;&quot;)]" doc:name="Set Payload"/>
+        <json:json-to-object-transformer returnClass="java.util.HashMap" doc:name="JSON to Object"/>
+    </sub-flow>
+    <sub-flow name="ActivityTrackAttributeSub_Flow">
+        <enricher source="#[payload]" target="#[flowVars.oldValueMap]" doc:name="Message Enricher">
+            <flow-ref name="ActivetyOldValueMapSub_Flow" doc:name="ActivetyOldValueMapSub_Flow"/>
+        </enricher>
+        <json:json-to-object-transformer returnClass="java.util.HashMap" doc:name="JSON to Object"/>
+        <enricher source="#[payload]" target="#[flowVars.attributes]" doc:name="Message Enricher">
+            <db:select config-ref="MySQL_Configuration" doc:name="Get Attributes">
+                <db:parameterized-query><![CDATA[SELECT ATTRIBUTE_ID AS attributeId, ATTRIBUTE_NAME AS attributeName, IS_ACTIVE AS isActive,
+DATE_CREATION_TIME AS creationDateTime, DATE_MODIFICATION_TIME AS modificationDateTime
+FROM attribute
+ORDER BY ATTRIBUTE_ID;]]></db:parameterized-query>
+            </db:select>
+        </enricher>
+    	<scatter-gather doc:name="Scatter-Gather">
+            <processor-chain>
+                <expression-filter expression="#[flowVars.attributes.size() &gt;0]" doc:name="Expression"/>
+                <logger message="Atribute1:#[flowVars.attributes.get(0).attributeName] #[flowVars.attributes.size()] &amp;&amp; #[payload.keySet().contains(flowVars.attributes.get(0).attributeName)] &amp;&amp; #[flowVars.attributes.get(0).isActive == '1']" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[payload.keySet().contains(flowVars.attributes.get(0).attributeName) &amp;&amp; flowVars.attributes.get(0).isActive == '1']" doc:name="Expression"/>
+                <logger message="#[flowVars.oldValueMap.get(flowVars.attributes.get(0).attributeName)] New: #[payload.get(flowVars.attributes.get(0).attributeName)]" level="INFO" doc:name="Logger"/>
+                <logger message="Atr1 Comp: #[payload.get(flowVars.attributes.get(0).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(0).attributeName))]" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[! payload.get(flowVars.attributes.get(0).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(0).attributeName))]" doc:name="Expression"/>
+                <set-payload value="00001" doc:name="Set Payload"/>
+            </processor-chain>
+            <processor-chain>
+                <expression-filter expression="#[flowVars.attributes.size() &gt;1]" doc:name="Expression"/>
+                <logger message="Atribute2:#[flowVars.attributes.get(1).attributeName] #[flowVars.attributes.size()] &amp;&amp; #[payload.keySet().contains(flowVars.attributes.get(1).attributeName)] &amp;&amp; #[flowVars.attributes.get(1).isActive == '1']" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[payload.keySet().contains(flowVars.attributes.get(1).attributeName) &amp;&amp; flowVars.attributes.get(1).isActive == '1']" doc:name="Expression"/>
+                <logger message="#[flowVars.oldValueMap.get(flowVars.attributes.get(1).attributeName)]  New: #[payload.get(flowVars.attributes.get(1).attributeName)]" level="INFO" doc:name="Logger"/>
+                <logger message="Atr2 Comp: #[payload.get(flowVars.attributes.get(1).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(1).attributeName))]" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[! payload.get(flowVars.attributes.get(1).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(1).attributeName))]" doc:name="Expression"/>
+                <set-payload value="00010" doc:name="Set Payload"/>
+            </processor-chain>
+            <processor-chain>
+                <expression-filter expression="#[flowVars.attributes.size() &gt;2]" doc:name="Expression"/>
+                <logger message="Atribute3:#[flowVars.attributes.get(2).attributeName] #[flowVars.attributes.size()] &amp;&amp; #[payload.keySet().contains(flowVars.attributes.get(2).attributeName)] &amp;&amp; #[flowVars.attributes.get(2).isActive == '1']" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[ payload.keySet().contains(flowVars.attributes.get(2).attributeName) &amp;&amp; flowVars.attributes.get(2).isActive == '1']" doc:name="Expression"/>
+                <logger message="#[flowVars.oldValueMap.get(flowVars.attributes.get(2).attributeName)]  New: #[payload.get(flowVars.attributes.get(2).attributeName)]" level="INFO" doc:name="Logger"/>
+                <logger message="Atr3 Comp: #[payload.get(flowVars.attributes.get(2).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(2).attributeName))]" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[! payload.get(flowVars.attributes.get(2).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(2).attributeName))]" doc:name="Expression"/>
+                <set-payload value="00100" doc:name="Set Payload"/>
+            </processor-chain>
+            <processor-chain>
+                <expression-filter expression="#[flowVars.attributes.size() &gt;3]" doc:name="Expression"/>
+                <logger message="Atribute4:#[flowVars.attributes.get(3).attributeName] #[flowVars.attributes.size()] &amp;&amp; #[payload.keySet().contains(flowVars.attributes.get(3).attributeName)] &amp;&amp; #[flowVars.attributes.get(3).isActive == '1']" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[payload.keySet().contains(flowVars.attributes.get(3).attributeName) &amp;&amp; flowVars.attributes.get(3).isActive == '1']" doc:name="Expression"/>
+                <logger message="#[flowVars.oldValueMap.get(flowVars.attributes.get(3).attributeName)]  New: #[payload.get(flowVars.attributes.get(3).attributeName)]" level="INFO" doc:name="Logger"/>
+                <logger message="Atr4 Comp: #[payload.get(flowVars.attributes.get(3).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(3).attributeName))]" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[! payload.get(flowVars.attributes.get(3).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(3).attributeName))]" doc:name="Expression"/>
+                <set-payload value="01000" doc:name="Set Payload"/>
+            </processor-chain>
+            <processor-chain>
+                <expression-filter expression="#[flowVars.attributes.size() &gt;4]" doc:name="Expression"/>
+                <logger message="Atribute5: #[flowVars.attributes.get(4).attributeName] #[flowVars.attributes.size()] &amp;&amp; #[payload.keySet().contains(flowVars.attributes.get(4).attributeName)] &amp;&amp; #[flowVars.attributes.get(4).isActive == '1']" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[payload.keySet().contains(flowVars.attributes.get(4).attributeName) &amp;&amp; flowVars.attributes.get(4).isActive == '1']" doc:name="Expression"/>
+                <logger message="#[flowVars.oldValueMap.get(flowVars.attributes.get(4).attributeName)]  New: #[payload.get(flowVars.attributes.get(4).attributeName)]" level="INFO" doc:name="Logger"/>
+                <logger message="Atr5 Comp: #[payload.get(flowVars.attributes.get(4).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(4).attributeName))]" level="INFO" doc:name="Logger"/>
+                <expression-filter expression="#[! payload.get(flowVars.attributes.get(4).attributeName).toString().equals(flowVars.oldValueMap.get(flowVars.attributes.get(4).attributeName))]" doc:name="Expression"/>
+                <set-payload value="10000" doc:name="Set Payload"/>
+            </processor-chain>
+            <set-payload value="00000" doc:name="Set Payload"/>
+            <set-payload value="00000" doc:name="Set Payload"/>
+        </scatter-gather>
+        <byte-array-to-object-transformer returnClass="java.util.List" doc:name="Byte Array to Object"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <scripting:component doc:name="Groovy">
+            <scripting:script engine="Groovy"><![CDATA[int result = 0;
+
+for(Object a : payload.toArray()){
+	result += Integer.valueOf(a);
+}
+
+payload = String.format("%05d", result);
+return payload;]]></scripting:script>
+        </scripting:component>
+    </sub-flow>
+    <flow name="updateActivityFlow">
+        <vm:inbound-endpoint exchange-pattern="one-way" path="uactivity" connector-ref="VM-updateActivity" doc:name="VM -UpdateActivity"/>
+        <logger message="#[message.id]" level="INFO" doc:name="Logger"/>
+        <db:update config-ref="MySQL_Configuration" doc:name="Database">
+            <db:parameterized-query><![CDATA[UPDATE activity SET ACTIVITY_COMPLETED=true 
+WHERE MULE_MESSAGE_ID=#[message.id]]]></db:parameterized-query>
+        </db:update>
+    </flow>
+
+</mule>

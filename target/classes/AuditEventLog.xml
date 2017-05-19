@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd">
+	 <flow name="EventFlow">
+        <vm:inbound-endpoint exchange-pattern="one-way" path="qevents" connector-ref="VM-Events" doc:name="VM-Events"/>
+        <set-payload value="#[message.inboundProperties.clientDetail]"  doc:name="Set Payload - clientDetail"/>
+        <db:insert config-ref="MySQL_Configuration" doc:name="Database">
+            <db:parameterized-query><![CDATA[insert into events 
+	(MULEMESSAGE_ID, 
+	USER_ID, 
+	EVENTS, 
+	EVENT_SOURCE, 
+	SOURCE_IP_ADDRESS, 
+	USER_AGENT, 
+	ADDITIONAL_DETAILS
+	)
+	values
+	(#[message.id.toString()], 
+	#[payload.'http.query.params'.userId], 
+	#[payload.'http.method'],
+	#[message.inboundProperties.eventSource],
+	#[payload.'host'.split(':')[0].toString()] , 
+	#[payload.'origin' !=null ? payload.'origin': null],  
+	#[payload.toString()]
+	)]]></db:parameterized-query>
+        </db:insert>
+    </flow>
+</mule>
